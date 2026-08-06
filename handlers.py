@@ -1,6 +1,9 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from states import VacationState
+from aiogram.types import CallbackQuery
 
 from config import ADMIN_IDS
 
@@ -14,18 +17,20 @@ from database import (
     get_employee_id,
     check_in,
     check_out,
-    mark_sick,
-    mark_dayoff,
-    get_today_status,
     has_checked_out,
-    get_employee_statistics,
-    get_checked_in_count,
+    create_leave,
+    get_active_sick_leave,
+    get_today_employee_status,
+    extend_leave,
     get_total_employees,
-    get_today_employees,
-    get_absent_employees,
+    get_today_attendance,
+    get_current_leaves,
+    get_absent_employees
 )
 
-from datetime import datetime
+from utils import *
+
+from constants import *
 
 router = Router()
 
@@ -50,7 +55,7 @@ async def start(message: Message):
         "/checkin — отметить приход\n"
         "/checkout — отметить уход\n"
         "/sick — отметить как на больничном\n"
-        "/dayoff — отметить как на отгуле\n"
+        "/vacation — отметить как на отпуске\n"
         "/stats — посмотреть свою статистику\n"
         "/help — открыть справку\n"
     )
@@ -69,27 +74,6 @@ async def start(message: Message):
     )
 
 
-# Проверка статуса сотрудника
-async def check_today_status(message: Message, employee_id: int, today: str):
-
-    status = get_today_status(employee_id, today)
-
-    if status is None:
-        return True
-
-    messages = {
-        "work": "⚠️ Сегодня вы уже отметили приход.",
-        "sick": "🏥 Сегодня у вас уже отмечен больничный.",
-        "dayoff": "🏖 Сегодня у вас уже отмечен отгул."
-    }
-
-    await message.answer(
-        messages.get(status, "⚠️ Сегодня уже есть отметка.")
-    )
-
-    return False
-
-
 # Команда "Пришел"
 @router.message(Command("checkin"))
 @router.message(F.text == "🟢 Пришел")
@@ -99,16 +83,42 @@ async def employee_check_in(message: Message):
 
     employee_id = get_employee_id(telegram_id)
 
-    today = datetime.now().strftime("%d.%m.%Y")
-    current_time = datetime.now().strftime("%H:%M")
+    today = get_today()
 
-    if not await check_today_status(message, employee_id, today):
+    current_time = get_current_time()
+
+    employee_status = get_today_employee_status(employee_id)
+
+    if employee_status["status"] == WORK:
+
+        await message.answer(
+            "⚠️ Сегодня вы уже отметили приход."
+        )
         return
 
-    check_in(employee_id, today, current_time)
+    if employee_status["status"] == SICK:
+
+        await message.answer(
+            "🏥 Сейчас у вас действует больничный."
+        )
+        return
+
+    if employee_status["status"] == VACATION:
+
+        await message.answer(
+            "🏖 Сейчас вы находитесь в отпуске."
+        )
+        return
+
+    check_in(
+        employee_id,
+        today,
+        current_time
+    )
 
     await message.answer(
-        f"✅ Приход отмечен в {current_time}"
+        f"✅ Приход отмечен.\n"
+        f"🕒 Время: {current_time}"
     )
 
 
@@ -118,81 +128,219 @@ async def employee_check_in(message: Message):
 async def employee_check_out(message: Message):
 
     telegram_id = message.from_user.id
+
     employee_id = get_employee_id(telegram_id)
 
-    today = datetime.now().strftime("%d.%m.%Y")
-    current_time = datetime.now().strftime("%H:%M")
+    today = get_today()
 
-    status = get_today_status(employee_id, today)
+    current_time = get_current_time()
 
-    if status is None:
+    employee_status = get_today_employee_status(employee_id)
+
+    if employee_status["status"] == NONE:
+
         await message.answer(
-            "⚠️ Сначала отметьте приход."
+            "⚠️ Сегодня вы еще не отметили приход."
         )
         return
 
-    if status == "sick":
+    if employee_status["status"] == SICK:
+
         await message.answer(
-            "🏥 Сегодня у вас отмечен больничный."
+            "🏥 Сейчас у вас действует больничный."
         )
         return
 
-    if status == "dayoff":
+    if employee_status["status"] == VACATION:
+
         await message.answer(
-            "🏖 Сегодня у вас отмечен отгул."
+            "🏖 Сейчас вы находитесь в отпуске."
         )
         return
 
-    if has_checked_out(employee_id, today):
+    if has_checked_out(employee_id):
+
         await message.answer(
-            "⚠️ Вы уже отметили уход сегодня."
+            "⚠️ Сегодня вы уже отметили уход."
         )
         return
 
-    check_out(employee_id, today, current_time)
+    check_out(
+        employee_id,
+        today,
+        current_time
+    )
 
     await message.answer(
-        f"👋 Уход отмечен в {current_time}"
+        f"✅ Уход отмечен.\n"
+        f"🕒 Время: {current_time}"
     )
 
 
 # Комадна "Больничный"
 @router.message(Command("sick"))
 @router.message(F.text == "🏥 Больничный")
-async def sick_leave(message: Message):
+async def employee_sick_leave(message: Message):
 
     telegram_id = message.from_user.id
+
     employee_id = get_employee_id(telegram_id)
 
-    today = datetime.now().strftime("%d.%m.%Y")
+    employee_status = get_today_employee_status(employee_id)
 
-    if not await check_today_status(message, employee_id, today):
+    if employee_status["status"] == WORK:
+
+        await message.answer(
+            "⚠️ Сегодня вы уже отметили рабочий день."
+        )
         return
 
-    mark_sick(employee_id, today)
+    if employee_status["status"] == SICK:
+
+        await message.answer(
+            "🏥 У вас уже открыт больничный."
+        )
+        return
+
+    if employee_status["status"] == VACATION:
+
+        await message.answer(
+            "🏖 Сейчас вы находитесь в отпуске."
+        )
+        return
+
+    start_date = get_today()
+
+    end_date = add_days(start_date, SICK_LEAVE_DAYS)
+
+    create_leave(
+        employee_id,
+        SICK,
+        start_date,
+        end_date
+    )
 
     await message.answer(
-        "🏥 Больничный успешно отмечен."
+        "🏥 Больничный оформлен.\n"
+        f"📅 До: {format_date(end_date)}"
     )
 
 
-# Команда Отгул
-@router.message(Command("dayoff"))
-@router.message(F.text == "🏖 Отгул")
-async def day_off(message: Message):
+# Продлить больничный
+@router.callback_query(F.data == EXTEND_SICK_CALLBACK)
+async def extend_sick_leave(callback: CallbackQuery):
 
-    telegram_id = message.from_user.id
-    employee_id = get_employee_id(telegram_id)
+    employee_id = get_employee_id(
+        callback.from_user.id
+    )
 
-    today = datetime.now().strftime("%d.%m.%Y")
+    leave = get_active_sick_leave(employee_id)
 
-    if not await check_today_status(message, employee_id, today):
+    new_end_date = add_days(
+        leave["end_date"],
+        SICK_LEAVE_EXTENSION_DAYS
+    )
+
+    extend_leave(
+        employee_id,
+        new_end_date
+    )
+
+    await callback.message.edit_text(
+        f"✅ Больничный продлен.\n"
+        f"📅 До: {format_date(new_end_date)}"
+    )
+
+    await callback.answer()
+
+
+# Не продлевать больничный
+@router.callback_query(F.data == CANCEL_SICK_CALLBACK)
+async def cancel_sick_leave(callback: CallbackQuery):
+
+    await callback.message.edit_text(
+        "🏥 Больничный не был продлен.\n\n"
+        "Желаем скорейшего выздоровления!"
+    )
+
+    await callback.answer()
+
+
+# Команда Отпуск
+@router.message(Command("vacation"))
+@router.message(F.text == "🏖 Отпуск")
+async def employee_vacation(message: Message, state: FSMContext):
+
+    employee_id = get_employee_id(message.from_user.id)
+
+    employee_status = get_today_employee_status(employee_id)
+
+    if employee_status["status"] == WORK:
+
+        await message.answer(
+            "⚠️ Сегодня вы уже отметили рабочий день."
+        )
         return
 
-    mark_dayoff(employee_id, today)
+    if employee_status["status"] == SICK:
+
+        await message.answer(
+            "🏥 Сейчас у вас действует больничный."
+        )
+        return
+
+    if employee_status["status"] == VACATION:
+
+        await message.answer(
+            "🏖 Вы уже находитесь в отпуске."
+        )
+        return
+
+    await state.set_state(VacationState.waiting_for_days)
 
     await message.answer(
-        "🏖 Отгул успешно отмечен."
+        "🏖 На сколько дней вы уходите в отпуск?"
+    )
+
+
+# Прием количества дней на отпуск
+@router.message(VacationState.waiting_for_days)
+async def vacation_days(message: Message, state: FSMContext):
+
+    if not message.text.isdigit():
+
+        await message.answer(
+            "Введите количество дней числом."
+        )
+        return
+
+    days = int(message.text)
+
+    if days <= 0:
+
+        await message.answer(
+            "Количество дней должно быть больше нуля."
+        )
+        return
+
+    employee_id = get_employee_id(message.from_user.id)
+
+    start_date = get_today()
+
+    end_date = add_days(start_date, days)
+
+    create_leave(
+        employee_id,
+        VACATION,
+        start_date,
+        end_date
+    )
+
+    await state.clear()
+
+    await message.answer(
+        f"🏖 Отпуск оформлен.\n"
+        f"📅 До: {format_date(end_date)}"
     )
 
 
@@ -204,7 +352,7 @@ async def statistics(message: Message):
     telegram_id = message.from_user.id
     employee_id = get_employee_id(telegram_id)
 
-    stats = get_employee_statistics(employee_id)
+    stats = build_employee_statistics(employee_id)
 
     if not stats:
         await message.answer(
@@ -213,30 +361,28 @@ async def statistics(message: Message):
         return
 
     status_names = {
-        "work": "💼 Работа",
-        "sick": "🏥 Больничный",
-        "dayoff": "🏖 Отгул"
+        WORK: "💼 Работа",
+        SICK: "🏥 Больничный",
+        VACATION: "🏖 Отпуск"
     }
 
     text = "📊 Ваша статистика\n\n"
 
     for day in stats:
 
-        date = day[0]
-        status = day[1]
-        check_in = day[2]
-        check_out = day[3]
+        date = day["date"]
+        status = day["status"]
+        check_in = day["check_in"]
+        check_out = day["check_out"]
 
         text += (
             f"📅 {date}\n"
             f"📌 Статус: {status_names.get(status, status)}\n"
         )
 
-        if status == "work":
+        if status == WORK:
 
-            text += (
-                f"🟢 Приход: {check_in}\n"
-            )
+            text += f"🟢 Приход: {check_in}\n"
 
             if check_out:
                 text += f"🔴 Уход: {check_out}\n"
@@ -262,7 +408,7 @@ async def help_command(message: Message):
         "/checkin — отметить приход\n"
         "/checkout — отметить уход\n"
         "/sick — отметить как на больничном\n"
-        "/dayoff — отметить как на отгуле\n"
+        "/vacation — отметить как на отпуске\n"
         "/stats — посмотреть свою статистику\n"
     )
 
@@ -292,88 +438,48 @@ async def report(message: Message):
         )
         return
 
-    today = datetime.now().strftime("%d.%m.%Y")
+    today = get_today()
 
     total = get_total_employees()
 
-    today_employees = get_today_employees(today)
+    work = get_today_attendance(today)
+
+    current_leaves = get_current_leaves()
 
     absent = get_absent_employees(today)
 
-    work = []
     sick = []
-    dayoff = []
+    vacation = []
 
-    for employee in today_employees:
+    for leave in current_leaves:
 
-        full_name = employee[0]
-        status = employee[1]
-        check_in = employee[2]
-        check_out = employee[3]
+        full_name = leave[0]
+        status = leave[1]
+        start_date = leave[2]
+        end_date = leave[3]
 
-        if status == "work":
-            work.append((full_name, check_in, check_out))
+        if status == SICK:
 
-        elif status == "sick":
-            sick.append(full_name)
+            sick.append((
+                full_name,
+                end_date
+            ))
 
-        elif status == "dayoff":
-            dayoff.append(full_name)
+        elif status == VACATION:
 
-    text = (
-        f"📋 Отчет за {today}\n\n"
+            vacation.append((
+                full_name,
+                end_date
+            ))
 
-        f"👥 Всего сотрудников: {total}\n"
-        f"💼 Работают: {len(work)}\n"
-        f"🏥 Больничный: {len(sick)}\n"
-        f"🏖 Отгул: {len(dayoff)}\n"
-        f"❌ Не отметились: {len(absent)}\n\n"
+    text = build_admin_report(
+        today,
+        total,
+        work,
+        sick,
+        vacation,
+        absent
     )
-
-    text += "💼 Работают:\n"
-
-    if work:
-
-        for employee in work:
-
-            text += (
-                f"• {employee[0]}\n"
-                f"  🟢 {employee[1]}\n"
-                f"  🔴 {employee[2] or '—'}\n\n"
-            )
-
-    else:
-        text += "Нет сотрудников.\n\n"
-
-    text += "🏥 Больничный:\n"
-
-    if sick:
-
-        for employee in sick:
-            text += f"• {employee}\n"
-
-    else:
-        text += "Нет сотрудников."
-
-    text += "\n\n🏖 Отгул:\n"
-
-    if dayoff:
-
-        for employee in dayoff:
-            text += f"• {employee}\n"
-
-    else:
-        text += "Нет сотрудников."
-
-    text += "\n\n❌ Не отметились:\n"
-
-    if absent:
-
-        for employee in absent:
-            text += f"• {employee[0]}\n"
-
-    else:
-        text += "Нет сотрудников."
 
     await message.answer(text)
 

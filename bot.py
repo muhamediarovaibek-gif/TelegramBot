@@ -4,7 +4,7 @@ import asyncio
 from config import BOT_TOKEN
 from handlers import router
 from database import create_database
-
+from scheduler import check_leave_statuses
 
 async def main():
     # Создаем таблицы в базе данных (если их еще нет)
@@ -18,6 +18,10 @@ async def main():
 
     # Подключаем Router из handlers.py
     dp.include_router(router)
+
+    asyncio.create_task(
+        check_leave_statuses(bot)
+    )
 
     print("Бот успешно запущен!")
 
