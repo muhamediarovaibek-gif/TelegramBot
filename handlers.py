@@ -83,6 +83,12 @@ async def employee_check_in(message: Message):
 
     employee_id = get_employee_id(telegram_id)
 
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return
+
     today = get_today()
 
     current_time = get_current_time()
@@ -130,6 +136,12 @@ async def employee_check_out(message: Message):
     telegram_id = message.from_user.id
 
     employee_id = get_employee_id(telegram_id)
+
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return
 
     today = get_today()
 
@@ -185,6 +197,12 @@ async def employee_sick_leave(message: Message):
     telegram_id = message.from_user.id
 
     employee_id = get_employee_id(telegram_id)
+
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return
 
     employee_status = get_today_employee_status(employee_id)
 
@@ -350,7 +368,14 @@ async def vacation_days(message: Message, state: FSMContext):
 async def statistics(message: Message):
 
     telegram_id = message.from_user.id
+
     employee_id = get_employee_id(telegram_id)
+
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return
 
     stats = build_employee_statistics(employee_id)
 
