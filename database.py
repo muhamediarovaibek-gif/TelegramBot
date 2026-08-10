@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import date
-from utils import get_today
 
 from constants import (
     WORK,
@@ -146,7 +145,7 @@ def check_out(employee_id, date, check_out_time):
 # Проверка отметки ухода сотрудника
 def has_checked_out(employee_id):
 
-    today = get_today()
+    today = date.today().isoformat()
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -201,7 +200,7 @@ def create_leave(employee_id, status, start_date, end_date):
 # Проверка записей присутствующих сотрудников
 def has_attendance_record(employee_id):
 
-    today = get_today()
+    today = date.today().isoformat()
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -256,7 +255,7 @@ def get_active_employee_leave(employee_id):
 # Получить активный больничный сотрудника
 def get_active_sick_leave(employee_id):
 
-    today = get_today()
+    today = date.today().isoformat()
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -349,7 +348,7 @@ def get_today_employee_status(employee_id):
 # Получить последний день больничного
 def get_sick_leaves_ending_today():
 
-    today = get_today()
+    today = date.today().isoformat()
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -515,7 +514,7 @@ def get_today_attendance(date):
 # Список отсутствующих сотрудников
 def get_current_leaves():
 
-    today = get_today()
+    today = date.today().isoformat()
 
     connection = get_connection()
     cursor = connection.cursor()

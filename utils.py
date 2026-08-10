@@ -104,6 +104,7 @@ def build_employee_statistics(employee_id):
 
     return statistics_list
 
+
 # Формирует текст отчета
 def build_admin_report(
     today,

@@ -252,7 +252,21 @@ async def extend_sick_leave(callback: CallbackQuery):
         callback.from_user.id
     )
 
+    if employee_id is None:
+        await callback.answer(
+            "❌ Вы не зарегистрированы в системе.",
+            show_alert=True
+        )
+        return
+
     leave = get_active_sick_leave(employee_id)
+
+    if leave is None:
+        await callback.answer(
+            "❌ Активный больничный не найден.",
+            show_alert=True
+        )
+        return
 
     new_end_date = add_days(
         leave["end_date"],
@@ -290,6 +304,12 @@ async def cancel_sick_leave(callback: CallbackQuery):
 async def employee_vacation(message: Message, state: FSMContext):
 
     employee_id = get_employee_id(message.from_user.id)
+
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return    
 
     employee_status = get_today_employee_status(employee_id)
 
@@ -342,6 +362,12 @@ async def vacation_days(message: Message, state: FSMContext):
         return
 
     employee_id = get_employee_id(message.from_user.id)
+
+    if employee_id is None:
+        await message.answer(
+            "❌ Вы не зарегистрированы в системе."
+        )
+        return
 
     start_date = get_today()
 
