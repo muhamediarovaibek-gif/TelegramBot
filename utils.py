@@ -1,9 +1,5 @@
 from datetime import date, datetime, timedelta
-from database import (
-    get_employee_attendance,
-    get_employee_leave_history
-)
-from constants import WORK
+from database import get_employee_leave_history
 
 
 # Текущая дата
@@ -54,20 +50,9 @@ def add_days(date_string, days):
 # Формирует статистику сотрудника
 def build_employee_statistics(employee_id):
 
-    attendance_history = get_employee_attendance(employee_id)
-
     leave_history = get_employee_leave_history(employee_id)
 
-    statistics = {}
-
-    for date, check_in, check_out in attendance_history:
-
-        statistics[date] = {
-            "date": date,
-            "status": WORK,
-            "check_in": check_in,
-            "check_out": check_out
-        }
+    statistics = []
 
     for status, start_date, end_date in leave_history:
 
@@ -85,24 +70,19 @@ def build_employee_statistics(employee_id):
 
         while current_date <= end:
 
-            date_key = current_date.isoformat()
-
-            statistics[date_key] = {
-                "date": date_key,
-                "status": status,
-                "check_in": None,
-                "check_out": None
-            }
+            statistics.append({
+                "date": current_date.isoformat(),
+                "status": status
+            })
 
             current_date += timedelta(days=1)
 
-    statistics_list = sorted(
-        statistics.values(),
+    statistics.sort(
         key=lambda item: item["date"],
         reverse=True
     )
 
-    return statistics_list
+    return statistics
 
 
 # Формирует текст отчета
@@ -111,8 +91,7 @@ def build_admin_report(
     total,
     work,
     sick,
-    vacation,
-    absent
+    vacation
 ):
 
     text = (
@@ -121,26 +100,23 @@ def build_admin_report(
         f"👥 Всего сотрудников: {total}\n"
         f"💼 Работают: {len(work)}\n"
         f"🏥 Больничный: {len(sick)}\n"
-        f"🏖 Отпуск: {len(vacation)}\n"
-        f"❌ Не отметились: {len(absent)}\n\n"
+        f"🏖 Отпуск: {len(vacation)}\n\n"
     )
 
     text += "💼 Работают:\n"
 
     if work:
 
-        for full_name, check_in, check_out in work:
+        for full_name in work:
 
             text += (
                 f"• {full_name}\n"
-                f"  🟢 {check_in}\n"
-                f"  🔴 {check_out or '—'}\n\n"
             )
 
     else:
-        text += "Нет сотрудников.\n\n"
+        text += "Нет сотрудников.\n"
 
-    text += "🏥 Больничный:\n"
+    text += "\n🏥 Больничный:\n"
 
     if sick:
 
@@ -148,13 +124,13 @@ def build_admin_report(
 
             text += (
                 f"• {full_name}\n"
-                f"  📅 До: {format_date(end_date)}\n\n"
+                f"  📅 До: {format_date(end_date)}\n"
             )
 
     else:
-        text += "Нет сотрудников.\n\n"
+        text += "Нет сотрудников.\n"
 
-    text += "🏖 Отпуск:\n"
+    text += "\n🏖 Отпуск:\n"
 
     if vacation:
 
@@ -162,21 +138,10 @@ def build_admin_report(
 
             text += (
                 f"• {full_name}\n"
-                f"  📅 До: {format_date(end_date)}\n\n"
+                f"  📅 До: {format_date(end_date)}\n"
             )
 
     else:
-        text += "Нет сотрудников.\n\n"
-
-    text += "❌ Не отметились:\n"
-
-    if absent:
-
-        for employee in absent:
-
-            text += f"• {employee[0]}\n"
-
-    else:
-        text += "Нет сотрудников."
+        text += "Нет сотрудников.\n"
 
     return text

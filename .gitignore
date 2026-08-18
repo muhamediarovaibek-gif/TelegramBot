@@ -2,6 +2,6 @@ venv/
 __pycache__/
 *.pyc
 .env
-attendance.db
+database.db
 .vscode/
 .idea/

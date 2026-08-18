@@ -9,26 +9,35 @@ from config import ADMIN_IDS
 
 from keyboards import (
     employee_keyboard,
-    admin_keyboard
+    admin_keyboard,
+    admin_panel_keyboard,
+    edit_employee_keyboard,
+    admin_cancel_keyboard,
+    delete_employee_keyboard
 )
 
 from database import (
     add_employee,
     get_employee_id,
-    check_in,
-    check_out,
-    has_checked_out,
     create_leave,
     get_active_sick_leave,
-    get_today_employee_status,
+    get_employee_status,
     extend_leave,
+    get_all_employees,
     get_total_employees,
-    get_today_attendance,
-    get_current_leaves,
-    get_absent_employees
+    get_employee,
+    telegram_id_exists,
+    update_employee_name,
+    update_employee_telegram_id,
+    delete_employee
 )
 
 from utils import *
+
+from states import (
+    EditEmployeeState, 
+    DeleteEmployeeState
+)
 
 from constants import *
 
@@ -39,157 +48,86 @@ router = Router()
 @router.message(Command("start"))
 async def start(message: Message):
 
-    add_employee(
-        message.from_user.id,
-        message.from_user.full_name
-    )
-
     telegram_id = message.from_user.id
+    full_name = message.from_user.full_name
 
+    employee_id = get_employee_id(telegram_id)
+
+    if employee_id is None:
+
+        add_employee(
+            telegram_id,
+            full_name
+        )
+
+        common_text = (
+            f"👋 Добро пожаловать, {full_name}!\n"
+            "Вы зарегистрированы в системе.\n\n"
+
+            "📌 Команды:\n"
+            "/sick — оформить больничный\n"
+            "/vacation — оформить отпуск\n"
+            "/stats — посмотреть статистику\n"
+            "/help — открыть справку\n"
+        )
+
+        if telegram_id in ADMIN_IDS:
+
+            common_text += (
+                "/report — открыть отчет по сотрудникам\n"
+                "/admin — открыть админ панель\n\n"
+                "Если возникнут вопросы, обратитесь "
+                "к администратору."
+            )
+
+            keyboard = admin_keyboard
+
+        else:
+
+            common_text += (
+                "\nЕсли возникнут вопросы, обратитесь "
+                "к администратору."
+            )
+
+            keyboard = employee_keyboard
+
+        await message.answer(
+            common_text,
+            reply_markup=keyboard
+        )
+
+        return
 
     common_text = (
-        f"👋 Добро пожаловать, {message.from_user.full_name}!\n\n"
-        "Это бот для учета рабочего времени сотрудников.\n"
-        "Вы можете пользоваться кнопками или командами.\n\n"
+        f"👋 С возвращением, {full_name}!\n\n"
+
         "📌 Команды:\n"
-        "/checkin — отметить приход\n"
-        "/checkout — отметить уход\n"
-        "/sick — отметить как на больничном\n"
-        "/vacation — отметить как на отпуске\n"
-        "/stats — посмотреть свою статистику\n"
+        "/sick — оформить больничный\n"
+        "/vacation — оформить отпуск\n"
+        "/stats — посмотреть статистику\n"
         "/help — открыть справку\n"
     )
 
     if telegram_id in ADMIN_IDS:
-        text = common_text + "/report — открыть отчет по сотрудникам\n\nЕсли возникнут вопросы, обратитесь к администратору."
+
+        common_text += (
+            "/report — открыть отчет по сотрудникам\n"
+            "/admin — открыть админ панель\n"
+        )
+
         keyboard = admin_keyboard
+
     else:
-        text = common_text + "\nЕсли возникнут вопросы, обратитесь к администратору."
+
         keyboard = employee_keyboard
 
-    
     await message.answer(
-        text,
+        common_text,
         reply_markup=keyboard
     )
 
 
-# Команда "Пришел"
-@router.message(Command("checkin"))
-@router.message(F.text == "🟢 Пришел")
-async def employee_check_in(message: Message):
-
-    telegram_id = message.from_user.id
-
-    employee_id = get_employee_id(telegram_id)
-
-    if employee_id is None:
-        await message.answer(
-            "❌ Вы не зарегистрированы в системе."
-        )
-        return
-
-    today = get_today()
-
-    current_time = get_current_time()
-
-    employee_status = get_today_employee_status(employee_id)
-
-    if employee_status["status"] == WORK:
-
-        await message.answer(
-            "⚠️ Сегодня вы уже отметили приход."
-        )
-        return
-
-    if employee_status["status"] == SICK:
-
-        await message.answer(
-            "🏥 Сейчас у вас действует больничный."
-        )
-        return
-
-    if employee_status["status"] == VACATION:
-
-        await message.answer(
-            "🏖 Сейчас вы находитесь в отпуске."
-        )
-        return
-
-    check_in(
-        employee_id,
-        today,
-        current_time
-    )
-
-    await message.answer(
-        f"✅ Приход отмечен.\n"
-        f"🕒 Время: {current_time}"
-    )
-
-
-# Команда "Ушел"
-@router.message(Command("checkout"))
-@router.message(F.text == "🔴 Ушел")
-async def employee_check_out(message: Message):
-
-    telegram_id = message.from_user.id
-
-    employee_id = get_employee_id(telegram_id)
-
-    if employee_id is None:
-        await message.answer(
-            "❌ Вы не зарегистрированы в системе."
-        )
-        return
-
-    today = get_today()
-
-    current_time = get_current_time()
-
-    employee_status = get_today_employee_status(employee_id)
-
-    if employee_status["status"] == NONE:
-
-        await message.answer(
-            "⚠️ Сегодня вы еще не отметили приход."
-        )
-        return
-
-    if employee_status["status"] == SICK:
-
-        await message.answer(
-            "🏥 Сейчас у вас действует больничный."
-        )
-        return
-
-    if employee_status["status"] == VACATION:
-
-        await message.answer(
-            "🏖 Сейчас вы находитесь в отпуске."
-        )
-        return
-
-    if has_checked_out(employee_id):
-
-        await message.answer(
-            "⚠️ Сегодня вы уже отметили уход."
-        )
-        return
-
-    check_out(
-        employee_id,
-        today,
-        current_time
-    )
-
-    await message.answer(
-        f"✅ Уход отмечен.\n"
-        f"🕒 Время: {current_time}"
-    )
-
-
-# Комадна "Больничный"
+# Команда "Больничный"
 @router.message(Command("sick"))
 @router.message(F.text == "🏥 Больничный")
 async def employee_sick_leave(message: Message):
@@ -204,32 +142,25 @@ async def employee_sick_leave(message: Message):
         )
         return
 
-    employee_status = get_today_employee_status(employee_id)
-
-    if employee_status["status"] == WORK:
-
-        await message.answer(
-            "⚠️ Сегодня вы уже отметили рабочий день."
-        )
-        return
+    employee_status = get_employee_status(employee_id)
 
     if employee_status["status"] == SICK:
-
         await message.answer(
             "🏥 У вас уже открыт больничный."
         )
         return
 
     if employee_status["status"] == VACATION:
-
         await message.answer(
             "🏖 Сейчас вы находитесь в отпуске."
         )
         return
 
     start_date = get_today()
-
-    end_date = add_days(start_date, SICK_LEAVE_DAYS)
+    end_date = add_days(
+        start_date,
+        SICK_LEAVE_DAYS
+    )
 
     create_leave(
         employee_id,
@@ -301,24 +232,24 @@ async def cancel_sick_leave(callback: CallbackQuery):
 # Команда Отпуск
 @router.message(Command("vacation"))
 @router.message(F.text == "🏖 Отпуск")
-async def employee_vacation(message: Message, state: FSMContext):
+async def employee_vacation(
+    message: Message,
+    state: FSMContext
+):
 
-    employee_id = get_employee_id(message.from_user.id)
+    employee_id = get_employee_id(
+        message.from_user.id
+    )
 
     if employee_id is None:
         await message.answer(
             "❌ Вы не зарегистрированы в системе."
         )
-        return    
-
-    employee_status = get_today_employee_status(employee_id)
-
-    if employee_status["status"] == WORK:
-
-        await message.answer(
-            "⚠️ Сегодня вы уже отметили рабочий день."
-        )
         return
+
+    employee_status = get_employee_status(
+        employee_id
+    )
 
     if employee_status["status"] == SICK:
 
@@ -334,7 +265,9 @@ async def employee_vacation(message: Message, state: FSMContext):
         )
         return
 
-    await state.set_state(VacationState.waiting_for_days)
+    await state.set_state(
+        VacationState.waiting_for_days
+    )
 
     await message.answer(
         "🏖 На сколько дней вы уходите в отпуск?"
@@ -343,7 +276,10 @@ async def employee_vacation(message: Message, state: FSMContext):
 
 # Прием количества дней на отпуск
 @router.message(VacationState.waiting_for_days)
-async def vacation_days(message: Message, state: FSMContext):
+async def vacation_days(
+    message: Message,
+    state: FSMContext
+):
 
     if not message.text.isdigit():
 
@@ -361,17 +297,26 @@ async def vacation_days(message: Message, state: FSMContext):
         )
         return
 
-    employee_id = get_employee_id(message.from_user.id)
+    employee_id = get_employee_id(
+        message.from_user.id
+    )
 
     if employee_id is None:
+
         await message.answer(
             "❌ Вы не зарегистрированы в системе."
         )
+
+        await state.clear()
+
         return
 
     start_date = get_today()
 
-    end_date = add_days(start_date, days)
+    end_date = add_days(
+        start_date,
+        days
+    )
 
     create_leave(
         employee_id,
@@ -407,12 +352,11 @@ async def statistics(message: Message):
 
     if not stats:
         await message.answer(
-            "У вас пока нет отметок."
+            "У вас пока нет больничных или отпусков."
         )
         return
 
     status_names = {
-        WORK: "💼 Работа",
         SICK: "🏥 Больничный",
         VACATION: "🏖 Отпуск"
     }
@@ -423,24 +367,12 @@ async def statistics(message: Message):
 
         date = day["date"]
         status = day["status"]
-        check_in = day["check_in"]
-        check_out = day["check_out"]
 
         text += (
-            f"📅 {date}\n"
-            f"📌 Статус: {status_names.get(status, status)}\n"
+            f"📅 {format_date(date)}\n"
+            f"📌 Статус: "
+            f"{status_names.get(status, status)}\n\n"
         )
-
-        if status == WORK:
-
-            text += f"🟢 Приход: {check_in}\n"
-
-            if check_out:
-                text += f"🔴 Уход: {check_out}\n"
-            else:
-                text += "🔴 Уход: —\n"
-
-        text += "\n"
 
     await message.answer(text)
 
@@ -456,22 +388,30 @@ async def help_command(message: Message):
         "Доступные команды:\n\n"
 
         "/start — открыть главное меню\n"
-        "/checkin — отметить приход\n"
-        "/checkout — отметить уход\n"
-        "/sick — отметить как на больничном\n"
-        "/vacation — отметить как на отпуске\n"
+        "/sick — оформить больничный\n"
+        "/vacation — оформить отпуск\n"
         "/stats — посмотреть свою статистику\n"
+        "/help — открыть справку\n"
     )
 
     if telegram_id in ADMIN_IDS:
-        text = "📖 Справка администратора\n\n" + common_text + "/report — отчет по сотрудникам\n/help — открыть справку"
-    else:
-        text = "📖 Справка\n\n" + common_text + "/help — открыть справку"
 
-    
-    await message.answer(
-        text,
-    )
+        text = (
+            "📖 Справка администратора\n\n"
+            + common_text
+            + "\n"
+            "/report — открыть отчет по сотрудникам\n"
+            "/admin — открыть админ панель"
+        )
+
+    else:
+
+        text = (
+            "📖 Справка\n\n"
+            + common_text
+        )
+
+    await message.answer(text)
 
 
 # Функции для админа
@@ -493,34 +433,34 @@ async def report(message: Message):
 
     total = get_total_employees()
 
-    work = get_today_attendance(today)
+    employees = get_all_employees()
 
-    current_leaves = get_current_leaves()
-
-    absent = get_absent_employees(today)
-
+    work = []
     sick = []
     vacation = []
 
-    for leave in current_leaves:
+    for employee_id, full_name in employees:
 
-        full_name = leave[0]
-        status = leave[1]
-        start_date = leave[2]
-        end_date = leave[3]
+        employee_status = get_employee_status(employee_id)
 
-        if status == SICK:
+        status = employee_status["status"]
+
+        if status == WORK:
+
+            work.append(full_name)
+
+        elif status == SICK:
 
             sick.append((
                 full_name,
-                end_date
+                employee_status["end_date"]
             ))
 
         elif status == VACATION:
 
             vacation.append((
                 full_name,
-                end_date
+                employee_status["end_date"]
             ))
 
     text = build_admin_report(
@@ -528,11 +468,383 @@ async def report(message: Message):
         total,
         work,
         sick,
-        vacation,
-        absent
+        vacation
     )
 
     await message.answer(text)
+
+
+# Админ-панель
+@router.message(Command("admin"))
+@router.message(F.text == "🛠 Админ панель")
+async def admin_panel(message: Message):
+
+    telegram_id = message.from_user.id
+
+    if telegram_id not in ADMIN_IDS:
+        await message.answer(
+            "❌ У вас нет доступа."
+        )
+        return
+
+    await message.answer(
+        "🛠 Админ панель\n\n"
+        "Выберите действие:",
+        reply_markup=admin_panel_keyboard
+    )
+
+
+# Назад из админ-панели
+@router.message(F.text == "↩️ Назад")
+async def admin_panel_back(message: Message):
+
+    telegram_id = message.from_user.id
+
+    if telegram_id not in ADMIN_IDS:
+        return
+
+    await message.answer(
+        "🏠 Главное меню",
+        reply_markup=admin_keyboard
+    )
+
+
+# Список сотрудников
+@router.message(F.text == "📋 Список сотрудников")
+async def employee_list(message: Message):
+
+    telegram_id = message.from_user.id
+
+    if telegram_id not in ADMIN_IDS:
+        await message.answer(
+            "❌ У вас нет доступа."
+        )
+        return
+
+    employees = get_all_employees()
+
+    if not employees:
+        await message.answer(
+            "👥 Сотрудников пока нет."
+        )
+        return
+
+    text = "📋 Список сотрудников\n\n"
+
+    for employee_id, full_name in employees:
+
+        text += (
+            f"🆔 ID: {employee_id}\n"
+            f"👤 {full_name}\n\n"
+        )
+
+    await message.answer(text)
+
+
+# Отмена действии
+@router.message(F.text == "❌ Отмена")
+async def cancel_admin_action(
+    message: Message,
+    state: FSMContext
+):
+
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    await state.clear()
+
+    await message.answer(
+        "❌ Операция отменена.",
+        reply_markup=admin_panel_keyboard
+    )
+
+
+# Изменение сотрудника
+@router.message(F.text == "✏️ Изменить сотрудника")
+async def edit_employee(message: Message, state: FSMContext):
+
+    telegram_id = message.from_user.id
+
+    if telegram_id not in ADMIN_IDS:
+        await message.answer(
+            "❌ У вас нет доступа."
+        )
+        return
+
+    await state.set_state(
+        EditEmployeeState.waiting_for_employee_id
+    )
+
+    await message.answer(
+        "✏️ Изменение сотрудника\n\n"
+        "Введите ID сотрудника:",
+        reply_markup=admin_cancel_keyboard
+    )
+
+
+# Получение ID сотрудника
+@router.message(
+        EditEmployeeState.waiting_for_employee_id,
+        F.text != "❌ Отмена"
+)
+async def edit_employee_id(
+    message: Message,
+    state: FSMContext
+):
+
+    if not message.text.isdigit():
+
+        await message.answer(
+            "❌ ID должен быть числом."
+        )
+        return
+
+    employee_id = int(message.text)
+
+    employee = get_employee(employee_id)
+
+    if employee is None:
+
+        await message.answer(
+            "❌ Сотрудник с таким ID не найден."
+        )
+        return
+
+    await state.update_data(
+        employee_id=employee_id
+    )
+
+    await state.set_state(
+        EditEmployeeState.waiting_for_field
+    )
+
+    await message.answer(
+        f"👤 Сотрудник: {employee[2]}\n"
+        f"🆔 Telegram ID: {employee[1]}\n\n"
+        "Что вы хотите изменить?",
+        reply_markup=edit_employee_keyboard
+    )
+
+
+# Изменение ФИО сотрудника
+@router.message(
+    EditEmployeeState.waiting_for_field,
+    F.text == "👤 Изменить имя"
+)
+async def edit_employee_name(
+    message: Message,
+    state: FSMContext
+):
+
+    await state.set_state(
+        EditEmployeeState.waiting_for_full_name
+    )
+
+    await message.answer(
+        "👤 Введите новое ФИО:",
+        reply_markup=admin_cancel_keyboard
+    )
+
+
+# Сохранение ФИО сотрудника
+@router.message(EditEmployeeState.waiting_for_full_name,
+    F.text != "❌ Отмена"
+)
+async def save_employee_name(
+    message: Message,
+    state: FSMContext
+):
+
+    full_name = message.text.strip()
+
+    if not full_name:
+
+        await message.answer(
+            "❌ ФИО не может быть пустым."
+        )
+        return
+
+    data = await state.get_data()
+
+    employee_id = data["employee_id"]
+
+    update_employee_name(
+        employee_id,
+        full_name
+    )
+
+    await state.clear()
+
+    await message.answer(
+        "✅ ФИО сотрудника успешно изменено.",
+        reply_markup=admin_panel_keyboard
+    )
+
+
+# Изменение ID сотрудника
+@router.message(
+    EditEmployeeState.waiting_for_field,
+    F.text == "🆔 Изменить Telegram ID"
+)
+async def edit_employee_telegram_id(
+    message: Message,
+    state: FSMContext
+):
+
+    await state.set_state(
+        EditEmployeeState.waiting_for_telegram_id
+    )
+
+    await message.answer(
+        "🆔 Введите новый Telegram ID:",
+        reply_markup=admin_cancel_keyboard
+    )
+
+
+# Сохранение ID сотрудника
+@router.message(EditEmployeeState.waiting_for_telegram_id,
+    F.text != "❌ Отмена"
+)
+async def save_employee_telegram_id(
+    message: Message,
+    state: FSMContext
+):
+
+    if not message.text.isdigit():
+
+        await message.answer(
+            "❌ Telegram ID должен быть числом."
+        )
+        return
+
+    new_telegram_id = int(message.text)
+
+    data = await state.get_data()
+
+    employee_id = data["employee_id"]
+
+    if telegram_id_exists(
+        new_telegram_id,
+        employee_id
+    ):
+
+        await message.answer(
+            "❌ Этот Telegram ID уже принадлежит "
+            "другому сотруднику."
+        )
+        return
+
+    update_employee_telegram_id(
+        employee_id,
+        new_telegram_id
+    )
+
+    await state.clear()
+
+    await message.answer(
+        "✅ Telegram ID сотрудника успешно изменён.",
+        reply_markup=admin_panel_keyboard
+    )
+
+
+# Удаление сотрудника
+@router.message(F.text == "🗑 Удалить сотрудника")
+async def delete_employee_start(
+    message: Message,
+    state: FSMContext
+):
+
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer(
+            "❌ У вас нет доступа."
+        )
+        return
+
+    await state.set_state(
+        DeleteEmployeeState.waiting_for_employee_id
+    )
+
+    await message.answer(
+        "🗑 Удаление сотрудника\n\n"
+        "Введите ID сотрудника:",
+        reply_markup=admin_cancel_keyboard
+    )
+
+
+# Получение ID сотрудника
+@router.message(
+    DeleteEmployeeState.waiting_for_employee_id,
+    F.text != "❌ Отмена"
+)
+async def delete_employee_id(
+    message: Message,
+    state: FSMContext
+):
+
+    if not message.text.isdigit():
+
+        await message.answer(
+            "❌ ID должен быть числом."
+        )
+        return
+
+    employee_id = int(message.text)
+
+    employee = get_employee(employee_id)
+
+    if employee is None:
+
+        await message.answer(
+            "❌ Сотрудник с таким ID не найден."
+        )
+        return
+
+    await state.update_data(
+        employee_id=employee_id
+    )
+
+    await state.set_state(
+        DeleteEmployeeState.waiting_for_confirmation
+    )
+
+    await message.answer(
+        "⚠️ Вы действительно хотите удалить сотрудника?\n\n"
+        f"👤 {employee[2]}\n"
+        f"🆔 Telegram ID: {employee[1]}\n\n"
+        "Все его записи о больничных и отпусках "
+        "также будут удалены.",
+        reply_markup=delete_employee_keyboard
+    )
+
+
+# Подтверждение удаления
+@router.message(
+    DeleteEmployeeState.waiting_for_confirmation,
+    F.text == "✅ Да, удалить"
+)
+async def delete_employee_confirm(
+    message: Message,
+    state: FSMContext
+):
+
+    if message.from_user.id not in ADMIN_IDS:
+        await state.clear()
+        return
+
+    data = await state.get_data()
+
+    employee_id = data["employee_id"]
+
+    delete_employee(employee_id)
+
+    await state.clear()
+
+    await message.answer(
+        "✅ Сотрудник успешно удалён.",
+        reply_markup=admin_panel_keyboard
+    )
+
+
 
 
 

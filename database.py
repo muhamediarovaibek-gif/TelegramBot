@@ -7,7 +7,7 @@ from constants import (
     NONE
 )
 
-DATABASE_NAME = "attendance.db"
+DATABASE_NAME = "database.db"
 
 
 # Подключение к базе данных
@@ -30,18 +30,6 @@ def create_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER UNIQUE,
             full_name TEXT NOT NULL
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER,
-            date TEXT,
-            check_in TEXT,
-            check_out TEXT,
-            FOREIGN KEY(employee_id)
-                REFERENCES employees(id)
         )
     """)
 
@@ -102,72 +90,26 @@ def get_employee_id(telegram_id):
     return None
 
 
-# Отметка прихода сотрудника
-def check_in(employee_id, date, check_in_time):
+# Получить сотрудника
+def get_employee(employee_id):
 
     connection = get_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
-        INSERT INTO attendance (
-            employee_id,
-            date,
-            check_in
-        )
-        VALUES (?, ?, ?)
-    """, (
-        employee_id,
-        date,
-        check_in_time
-    ))
+        SELECT
+            id,
+            telegram_id,
+            full_name
+        FROM employees
+        WHERE id = ?
+    """, (employee_id,))
 
-    connection.commit()
-    connection.close()
-
-
-# Отметка ухода сотрудника
-def check_out(employee_id, date, check_out_time):
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        UPDATE attendance
-        SET check_out = ?
-        WHERE employee_id = ?
-        AND date = ?
-    """, (check_out_time, employee_id, date))
-
-    connection.commit()
-    connection.close()
-
-
-# Проверка отметки ухода сотрудника
-def has_checked_out(employee_id):
-
-    today = date.today().isoformat()
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT check_out
-        FROM attendance
-        WHERE employee_id = ?
-        AND date = ?
-    """, (
-        employee_id,
-        today
-    ))
-
-    result = cursor.fetchone()
+    employee = cursor.fetchone()
 
     connection.close()
 
-    if result is None:
-        return False
-
-    return result[0] is not None
+    return employee
 
 
 # Отметка больничного и отпуска
@@ -195,31 +137,6 @@ def create_leave(employee_id, status, start_date, end_date):
 
     connection.commit()
     connection.close()
-
-
-# Проверка записей присутствующих сотрудников
-def has_attendance_record(employee_id):
-
-    today = date.today().isoformat()
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT 1
-        FROM attendance
-        WHERE employee_id = ?
-        AND date = ?
-    """, (
-        employee_id,
-        today
-    ))
-
-    result = cursor.fetchone()
-
-    connection.close()
-
-    return result is not None
 
 
 # Получить активный статус отсутствующих сотрудников
@@ -322,7 +239,7 @@ def get_employee_leave_history(employee_id):
 
 
 # Получить статус сотрудника
-def get_today_employee_status(employee_id):
+def get_employee_status(employee_id):
 
     leave = get_active_employee_leave(employee_id)
 
@@ -334,14 +251,8 @@ def get_today_employee_status(employee_id):
             "end_date": leave[2]
         }
 
-    if has_attendance_record(employee_id):
-
-        return {
-            "status": WORK
-        }
-
     return {
-        "status": NONE
+        "status": WORK
     }
 
 
@@ -421,48 +332,27 @@ def mark_leave_notification_sent(employee_id):
     connection.close()
 
 
-# Получить историю работающих сотрудников
-def get_employee_attendance(employee_id):
+# Функции для админа
+
+# Получить всех сотрудников
+def get_all_employees():
 
     connection = get_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
         SELECT
-            date,
-            check_in,
-            check_out
-        FROM attendance
-        WHERE employee_id = ?
-        ORDER BY date DESC
-    """, (employee_id,))
+            id,
+            full_name
+        FROM employees
+        ORDER BY full_name
+    """)
 
-    statistics = cursor.fetchall()
+    employees = cursor.fetchall()
 
     connection.close()
 
-    return statistics
-
-
-# Функции для админа
-
-# Количество отмеченных сотрудников
-def get_checked_in_count(date):
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM attendance
-        WHERE date = ?
-    """, (date,))
-
-    count = cursor.fetchone()[0]
-
-    connection.close()
-
-    return count
+    return employees
 
 
 # Количество всех сотрудников
@@ -483,89 +373,84 @@ def get_total_employees():
     return total
 
 
-# Список работающих сотрудников
-def get_today_attendance(date):
+# Проверка ID сотрудника
+def telegram_id_exists(telegram_id, employee_id):
 
     connection = get_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT
-            employees.full_name,
-            attendance.check_in,
-            attendance.check_out
-        FROM attendance
-
-        INNER JOIN employees
-            ON attendance.employee_id = employees.id
-
-        WHERE attendance.date = ?
-
-        ORDER BY employees.full_name
-    """, (date,))
-
-    attendance = cursor.fetchall()
-
-    connection.close()
-
-    return attendance
-
-
-# Список отсутствующих сотрудников
-def get_current_leaves():
-
-    today = date.today().isoformat()
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT
-            employees.full_name,
-            leave_status.status,
-            leave_status.start_date,
-            leave_status.end_date
-
-        FROM leave_status
-
-        INNER JOIN employees
-            ON leave_status.employee_id = employees.id
-
-        WHERE leave_status.start_date <= ?
-        AND leave_status.end_date >= ?
-
-        ORDER BY employees.full_name
+        SELECT id
+        FROM employees
+        WHERE telegram_id = ?
+        AND id != ?
     """, (
-        today,
-        today
+        telegram_id,
+        employee_id
     ))
 
-    leaves = cursor.fetchall()
+    employee = cursor.fetchone()
 
     connection.close()
 
-    return leaves
+    return employee is not None
 
 
-# Список неотмеченных сотрудников
-def get_absent_employees(date):
+# Изменить ФИО сотрудника
+def update_employee_name(employee_id, full_name):
 
     connection = get_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT full_name
-        FROM employees
-        WHERE id NOT IN (
-            SELECT employee_id
-            FROM attendance
-            WHERE date = ?
-        )
-        ORDER BY full_name
-    """, (date,))
+        UPDATE employees
+        SET full_name = ?
+        WHERE id = ?
+    """, (
+        full_name,
+        employee_id
+    ))
 
-    employees = cursor.fetchall()
-
+    connection.commit()
     connection.close()
 
-    return employees
+
+# Изменить ID сотрудника
+def update_employee_telegram_id(employee_id, telegram_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        UPDATE employees
+        SET telegram_id = ?
+        WHERE id = ?
+    """, (
+        telegram_id,
+        employee_id
+    ))
+
+    connection.commit()
+    connection.close()
+
+
+# Удалить сотрудника
+def delete_employee(employee_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    # Сначала удаляем связанные больничные и отпуска
+    cursor.execute("""
+        DELETE FROM leave_status
+        WHERE employee_id = ?
+    """, (employee_id,))
+
+    # Затем удаляем самого сотрудника
+    cursor.execute("""
+        DELETE FROM employees
+        WHERE id = ?
+    """, (employee_id,))
+
+    connection.commit()
+    connection.close()

@@ -19,10 +19,12 @@ async def main():
     # Подключаем Router из handlers.py
     dp.include_router(router)
 
+    # Подключаем сообщение при окончании больничного
     asyncio.create_task(
         check_leave_statuses(bot)
     )
 
+    # Сообщение после запуска бота
     print("Бот успешно запущен!")
 
     # Начинаем получать сообщения от Telegram
