@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
-from database import get_employee_leave_history
+from database import get_active_employee_leave
+from constants import WORK
 
 
 # Текущая дата
@@ -50,42 +51,95 @@ def add_days(date_string, days):
 # Формирует статистику сотрудника
 def build_employee_statistics(employee_id):
 
-    leave_history = get_employee_leave_history(employee_id)
+    leave = get_active_employee_leave(employee_id)
 
-    statistics = []
+    if leave:
 
-    for status, start_date, end_date in leave_history:
+        status, start_date, end_date = leave
 
-        start = datetime.strptime(
-            start_date,
-            "%Y-%m-%d"
-        ).date()
+        return {
+            "status": status,
+            "start_date": start_date,
+            "end_date": end_date
+        }
 
-        end = datetime.strptime(
-            end_date,
-            "%Y-%m-%d"
-        ).date()
+    return {
+        "status": WORK
+    }
 
-        current_date = start
 
-        while current_date <= end:
+# Формируем отчет количества
+def build_admin_count_report(
+    today,
+    total,
+    work,
+    sick,
+    vacation
+):
 
-            statistics.append({
-                "date": current_date.isoformat(),
-                "status": status
-            })
+    text = (
+        f"📊 Отчет за {format_date(today)}\n\n"
 
-            current_date += timedelta(days=1)
-
-    statistics.sort(
-        key=lambda item: item["date"],
-        reverse=True
+        f"👥 Всего сотрудников: {total}\n"
+        f"💼 Работают: {len(work)}\n"
+        f"🏥 Больничный: {len(sick)}\n"
+        f"🏖 Отпуск: {len(vacation)}"
     )
 
-    return statistics
+    return text
 
 
-# Формирует текст отчета
+# Формируем отчет список
+def build_admin_list_report(
+    work,
+    sick,
+    vacation
+):
+
+    text = "👥 Список сотрудников\n\n"
+
+    text += "💼 Работают:\n"
+
+    if work:
+
+        for full_name in work:
+            text += f"• {full_name}\n"
+
+    else:
+        text += "Нет сотрудников.\n"
+
+    text += "\n🏥 Больничный:\n"
+
+    if sick:
+
+        for full_name, end_date in sick:
+
+            text += (
+                f"• {full_name}\n"
+                f"  📅 До: {format_date(end_date)}\n"
+            )
+
+    else:
+        text += "Нет сотрудников.\n"
+
+    text += "\n🏖 Отпуск:\n"
+
+    if vacation:
+
+        for full_name, end_date in vacation:
+
+            text += (
+                f"• {full_name}\n"
+                f"  📅 До: {format_date(end_date)}\n"
+            )
+
+    else:
+        text += "Нет сотрудников."
+
+    return text
+
+
+# Формирует полный отчет
 def build_admin_report(
     today,
     total,
@@ -145,3 +199,5 @@ def build_admin_report(
         text += "Нет сотрудников.\n"
 
     return text
+
+

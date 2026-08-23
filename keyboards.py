@@ -11,6 +11,7 @@ from constants import (
 )
 
 employee_buttons = [
+    [KeyboardButton(text="🚀 Запуск")],
     [KeyboardButton(text="🏥 Больничный")],
     [KeyboardButton(text="🏖 Отпуск")],
     [KeyboardButton(text="📊 Моя статистика")],
@@ -51,6 +52,7 @@ edit_employee_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="👤 Изменить имя")],
         [KeyboardButton(text="🆔 Изменить Telegram ID")],
+        [KeyboardButton(text="🔄 Изменить статус")],
         [KeyboardButton(text="❌ Отмена")]
     ],
     resize_keyboard=True,
@@ -71,6 +73,30 @@ delete_employee_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✅ Да, удалить")],
         [KeyboardButton(text="❌ Отмена")]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+
+status_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="💼 Работает")],
+        [KeyboardButton(text="🏥 Больничный")],
+        [KeyboardButton(text="🏖 Отпуск")],
+        [KeyboardButton(text="❌ Отмена")]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+
+report_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🔢 Количество сотрудников")],
+        [KeyboardButton(text="👥 Список сотрудников")],
+        [KeyboardButton(text="📋 Полный отчет")],
+        [KeyboardButton(text="↩️ Назад")]
     ],
     resize_keyboard=True,
     one_time_keyboard=False

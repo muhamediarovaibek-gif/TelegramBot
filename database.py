@@ -1,9 +1,10 @@
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from constants import (
     WORK,
     SICK,
+    VACATION,
     NONE
 )
 
@@ -90,28 +91,6 @@ def get_employee_id(telegram_id):
     return None
 
 
-# Получить сотрудника
-def get_employee(employee_id):
-
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT
-            id,
-            telegram_id,
-            full_name
-        FROM employees
-        WHERE id = ?
-    """, (employee_id,))
-
-    employee = cursor.fetchone()
-
-    connection.close()
-
-    return employee
-
-
 # Отметка больничного и отпуска
 def create_leave(employee_id, status, start_date, end_date):
 
@@ -155,7 +134,7 @@ def get_active_employee_leave(employee_id):
         FROM leave_status
         WHERE employee_id = ?
         AND start_date <= ?
-        AND end_date >= ?
+        AND end_date > ?
     """, (
         employee_id,
         today,
@@ -188,11 +167,13 @@ def get_active_sick_leave(employee_id):
         FROM leave_status
         WHERE employee_id = ?
         AND status = ?
-        AND end_date >= ?
+        AND start_date <= ?
+        AND end_date > ?
         LIMIT 1
     """, (
         employee_id,
         SICK,
+        today,
         today
     ))
 
@@ -256,10 +237,11 @@ def get_employee_status(employee_id):
     }
 
 
-# Получить последний день больничного
-def get_sick_leaves_ending_today():
+# Получить больничный, которые заканчиваются завтра
+def get_sick_leaves_ending_tomorrow():
 
-    today = date.today().isoformat()
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
 
     connection = get_connection()
     cursor = connection.cursor()
@@ -279,7 +261,7 @@ def get_sick_leaves_ending_today():
         AND leave_status.notification_sent = 0
     """, (
         SICK,
-        today
+        tomorrow.isoformat()
     ))
 
     employees = cursor.fetchall()
@@ -334,6 +316,28 @@ def mark_leave_notification_sent(employee_id):
 
 # Функции для админа
 
+# Получить сотрудника
+def get_employee(employee_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            telegram_id,
+            full_name
+        FROM employees
+        WHERE id = ?
+    """, (employee_id,))
+
+    employee = cursor.fetchone()
+
+    connection.close()
+
+    return employee
+
+
 # Получить всех сотрудников
 def get_all_employees():
 
@@ -345,7 +349,7 @@ def get_all_employees():
             id,
             full_name
         FROM employees
-        ORDER BY full_name
+        ORDER BY id ASC
     """)
 
     employees = cursor.fetchall()
@@ -428,6 +432,91 @@ def update_employee_telegram_id(employee_id, telegram_id):
     """, (
         telegram_id,
         employee_id
+    ))
+
+    connection.commit()
+    connection.close()
+
+
+# Удалить сотрудника из отсутствующих
+def remove_employee_from_leave(employee_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        DELETE FROM leave_status
+        WHERE employee_id = ?
+    """, (employee_id,))
+
+    connection.commit()
+    connection.close()
+
+
+# Поставить сотрудника на больничный
+def set_employee_sick(
+    employee_id,
+    start_date,
+    end_date
+):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        DELETE FROM leave_status
+        WHERE employee_id = ?
+    """, (employee_id,))
+
+    cursor.execute("""
+        INSERT INTO leave_status (
+            employee_id,
+            status,
+            start_date,
+            end_date,
+            notification_sent
+        )
+        VALUES (?, ?, ?, ?, 0)
+    """, (
+        employee_id,
+        SICK,
+        start_date,
+        end_date
+    ))
+
+    connection.commit()
+    connection.close()
+
+
+# Поставить сотрудника на отпуск
+def set_employee_vacation(
+    employee_id,
+    start_date,
+    end_date
+):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        DELETE FROM leave_status
+        WHERE employee_id = ?
+    """, (employee_id,))
+
+    cursor.execute("""
+        INSERT INTO leave_status (
+            employee_id,
+            status,
+            start_date,
+            end_date,
+            notification_sent
+        )
+        VALUES (?, ?, ?, ?, 0)
+    """, (
+        employee_id,
+        VACATION,
+        start_date,
+        end_date
     ))
 
     connection.commit()
